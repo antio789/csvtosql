@@ -20,50 +20,47 @@ fs.readFile("sql-pretreatment.csv", "utf8", async (err, data) => {
     try {
         let count = 0;
         for (const row of parsedData.data) {
-            console.log(`working on row number: ${count++}`)
+            //console.log(`working on row number: ${count++}`)
             if (row["doi link"]) {
-
                 const article = await check_article(row);
-                if (article.length === 0) {
+                if (!article) {
                     //console.log(article, row["doi link"]);
                     await insert_article(row);
                 }
 
                 const cat = await check_duplicate("fields", "name", row["pretreatment category"]);
-                if (cat.length === 0) {
-                    await insert_field(row["fields", "pretreatment category"]).catch(err => {
-                        throw new Error(`could not add field with title ${row.Title}`, {cause: err})
+                if (!cat) {
+                    await insert_field("fields", row["pretreatment category"]).catch(err => {
+                        throw new Error(`could not add pretreatment CATEGORY with title ${row.Title}`, {cause: err})
                     });
                 }
-
+                await add_articlePretreatment(row["doi link"], row["pretreatment category"]);
 
                 //insert pretreatment type(subcategory) and link field with upper category
                 const type = await check_duplicate("fields", "name", row["pretreatment type"]);
-                if (type.length === 0) {
+                if (!type) {
                     await insert_field("fields", row["pretreatment type"]).catch(err => {
-                        throw new Error(`could not add field with title ${row.Title}`, {cause: err})
+                        throw new Error(`could not add pretreatment TYPE with title ${row.Title}`, {cause: err})
                     });
                 }
-                await linkFields(row["pretreatment category"], row["pretreatment type"]);
+                await add_articlePretreatment(row["doi link"], row["pretreatment type"]);
+
+                await linkFields(row["pretreatment category"], row["pretreatment type"]).catch(err => {
+                    throw new Error(`could not link a pretreatment category with a type ${row.Title}`, {cause: err})
+                });
 
                 await insert_field("substrate_category", row["substrate category"]).catch(err => {
-                    throw new Error(`could not add field with title ${row.Title}`, {cause: err})
-                });
-                await insert_substrate("substrate_name", row["substrate"], "substrate_category", row["substrate category"]).catch(err => {
-                    throw new Error(`could not add field with title ${row.Title}`, {cause: err})
-                });
-                await insert_substrate("substrate_type", row["substrate type"], "substrate_category", row["substrate category"]).catch(err => {
-                    throw new Error(`could not add field with title ${row.Title}`, {cause: err})
+                    throw new Error(`could not add new substrate category with title ${row.Title}`, {cause: err})
                 });
 
 
-                await add_articleContent(row["doi link"], "anaerobic digestion");
-                await add_articleContent(row["doi link"], row["pretreatment category"]);
-                await add_articleContent(row["doi link"], row["pretreatment type"]);
+
 
                 //add results.
 
-                const result = await add_articleResults(row["doi link"], row);
+                const result = await add_articleResults(row["doi link"], row).catch(err => {
+                    throw new Error(`could not add results on row: ${row.Title}`, {cause: err})
+                });
                 if (!result) console.log(`results ignored for article: ${row["Title"]}`);
 
                 //await add_articlesubstrate(row["doi link"], row).catch(err => { throw new Error(`could not add substrate to article with title ${row.Title}`, { cause: err }) });
@@ -85,7 +82,6 @@ function add_articlesubstrate(doi, row) {
         const parentID = await getSubstrateID("substrate_category", row["substrate category"]).catch(err => console.log(err));
         const typeID = await findSubstrateID("substrate_type", row["substrate type"]).catch(err => console.log(err));
         const nameID = await findSubstrateID("substrate_name", row["substrate"]).catch(err => console.log(err));
-        console.log(articleID.id);
         db.serialize(() => {
             db.run(`INSERT INTO article_substrate (article_id,category_id,name_id,type_id) VALUES (?,?,?,?)`,
                 [articleID.id, parentID.id, nameID, typeID],
@@ -98,39 +94,39 @@ function add_articlesubstrate(doi, row) {
 }
 
 function add_articleResults(doi, row) {
-    return new Promise(async function (resolve, reject) {
+    return new Promise(async function (res, reject) {
         const articleID = await getIDfromDOI(doi).catch(err => console.log(err));
+        const catID = await getIDfromSubCategory(row["substrate category"]).catch(err => console.log(err));
         const values = [];
-        isResults = false;
+        let isResults = false;
         for (const key in row) {
-            if (key === "TS %") isResults = true;
+            if (key === "substrate name") isResults = true;
             if (isResults) {
                 values.push(row[key]);
             }
         }
         if (values.every(value => value === null)) {
             console.log(`All values are null for row: ${row["Title"]}`);
-            resolve(null);
+            res(null);
         }
         else {
             db.serialize(() => {
-                db.run(`INSERT OR IGNORE INTO results (TS,VS,TC,TN,"C/N",cellulose,"hemi-cellulose",lignin,"article_id") VALUES (?,?,?,?,?,?,?,?,?)`, [...values, articleID.id],
+                db.run(`INSERT OR IGNORE INTO article_content ("substrate name","substrate type",TS,VS,TC,TN,"C/N",cellulose,"hemi-cellulose",lignin,"article_id","category_id") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [...values, articleID.id,catID.id],
                     function (err) {
                         if (err) return reject(err);  // Reject if there's an error
-                        resolve(this.lastID || null); // Resolve lastID or null if ignored
+                        res(this.lastID || null); // Resolve lastID or null if ignored
                     });
             })
         }
     })
 }
 
-function add_articleContent(doi, field) {
+function add_articlePretreatment(doi, field) {
     return new Promise(async function (resolve, reject) {
         const articleID = await getIDfromDOI(doi).catch(err => console.log(err));
         const fieldID = await getID(field).catch(err => console.log(err));
-        console.log(`fieldID =${fieldID}`);
         db.serialize(() => {
-            db.run(`INSERT INTO article_content (article_id,field_id) VALUES (?,?)`, [articleID.id, fieldID.id],
+            db.run(`INSERT INTO article_pretreatment (article_id,field_id) VALUES (?,?)`, [articleID.id, fieldID.id],
                 function (err) {
                     if (err) return reject(err);  // Reject if there's an error
                     resolve(this.lastID || null); // Resolve lastID or null if ignored
@@ -180,6 +176,17 @@ function getIDfromDOI(doi) {
     return new Promise(function (resolve, reject) {
         db.serialize(() => {
             db.get(`SELECT id FROM Articles WHERE doi = ?`, [doi], (err, rows) => {
+                if (err) { return reject(err); }
+                resolve(rows);
+            });
+        })
+    })
+}
+
+function getIDfromSubCategory(name) {
+    return new Promise(function (resolve, reject) {
+        db.serialize(() => {
+            db.get(`SELECT id FROM substrate_category WHERE name = ?`, [name], (err, rows) => {
                 if (err) { return reject(err); }
                 resolve(rows);
             });
@@ -254,7 +261,7 @@ function insert_article(row) {
 function check_duplicate(table, field, row) {
     return new Promise(function (resolve, reject) {
         db.serialize(() => {
-            db.all(`SELECT "${field}" FROM "${table}" WHERE "${field}" = "${row}"`, (err, rows) => {
+            db.get(`SELECT "${field}" FROM "${table}" WHERE "${field}" = "${row}"`, (err, rows) => {
                 if (err) { return reject(err); }
                 resolve(rows);
             });
