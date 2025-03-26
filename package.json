@@ -1,0 +1,15 @@
+{
+  "name": "sqlupload",
+  "version": "1.0.0",
+  "description": "uploading data from an excel sheet to a sqlite database",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "papaparse": "^5.5.2",
+    "sqlite3": "^5.1.7"
+  }
+}
