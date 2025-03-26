@@ -2,7 +2,6 @@ const sqlite3 = require('sqlite3');
 const db = new sqlite3.Database('substrate_demo.db');
 const Papa = require('papaparse');
 const fs = require('fs');
-const { error } = require('console');
 
 
 fs.readFile("sql-pretreatment.csv", "utf8", async (err, data) => {
@@ -18,7 +17,7 @@ fs.readFile("sql-pretreatment.csv", "utf8", async (err, data) => {
     });
 
     try {
-        let count = 0;
+        //let count = 0;
         for (const row of parsedData.data) {
             //console.log(`working on row number: ${count++}`)
             if (row["doi link"]) {
@@ -76,23 +75,6 @@ fs.readFile("sql-pretreatment.csv", "utf8", async (err, data) => {
 
 });
 
-function add_articlesubstrate(doi, row) {
-    return new Promise(async function (resolve, reject) {
-        const articleID = await getIDfromDOI(doi).catch(err => console.log(err));
-        const parentID = await getSubstrateID("substrate_category", row["substrate category"]).catch(err => console.log(err));
-        const typeID = await findSubstrateID("substrate_type", row["substrate type"]).catch(err => console.log(err));
-        const nameID = await findSubstrateID("substrate_name", row["substrate"]).catch(err => console.log(err));
-        db.serialize(() => {
-            db.run(`INSERT INTO article_substrate (article_id,category_id,name_id,type_id) VALUES (?,?,?,?)`,
-                [articleID.id, parentID.id, nameID, typeID],
-                function (err) {
-                    if (err) return reject(err);  // Reject if there's an error
-                    resolve(this.lastID || null); // Resolve lastID or null if ignored
-                });
-        })
-    })
-}
-
 function add_articleResults(doi, row) {
     return new Promise(async function (res, reject) {
         const articleID = await getIDfromDOI(doi).catch(err => console.log(err));
@@ -146,18 +128,7 @@ function insert_field(table, value) {
         })
     })
 }
-function insert_substrate(table, value, parent_table, parent) {
-    return new Promise(async function (resolve, reject) {
-        const parentID = await getSubstrateID(parent_table, parent).catch(err => console.log(err));
-        db.serialize(() => {
-            db.run(`INSERT OR IGNORE INTO "${table}" (name,parent_id) VALUES (?,?)`, [value, parentID.id],
-                function (err) {
-                    if (err) return reject(err);  // Reject if there's an error
-                    resolve(this.lastID || null); // Resolve lastID or null if ignored
-                });
-        })
-    })
-}
+
 function linkFields(parent, child) {
     return new Promise(async function (resolve, reject) {
         const parentID = await getID(parent).catch(err => console.log(err));
@@ -206,46 +177,12 @@ function getID(field_name) {
     })
 }
 
-function getSubstrateID(table, field_name) {
-    return new Promise(function (resolve, reject) {
-        db.serialize(() => {
-            db.get(`SELECT "id" FROM ${table} WHERE name = ?`, [field_name], (err, row) => {
-                if (err) { return reject(err); }
-                if (!row) { return reject(`row not found: ${field_name} at table ${table}`) }
-                resolve(row);
-            });
-        })
-    })
-}
-
-function findSubstrateID(table, field_name) {
-    return new Promise(function (resolve, reject) {
-        db.serialize(() => {
-            db.get(`SELECT "id" FROM ${table} WHERE name = ?`, [field_name], (err, row) => {
-                if (err) { return reject(err) };
-                resolve(row ? row.id : null);
-            });
-        })
-    })
-}
-
-function check_duplicate_fields(table, field, row) {
-    return new Promise(function (resolve, reject) {
-        db.serialize(() => {
-            db.all(`SELECT "${field}" FROM "${table}" WHERE "${field}" = "${row}"`, (err, rows) => {
-                if (err) { return reject(err); }
-                resolve(rows);
-            });
-        })
-    })
-}
-
 function insert_article(row) {
     return new Promise(function (resolve, reject) {
         if (row["doi link"]) {
             db.serialize(() => {
                 db.run(`INSERT INTO Articles (title,abstract,doi,publication_year) VALUES ("${row.Title}", "${row.abstract}", "${row["doi link"]}", "${row["publication year"]}")`,
-                    function (err, rows) {
+                    function (err) {
                         if (!this.lastID) {
                             console.log(row["doi link"]);
                             return reject(err);
