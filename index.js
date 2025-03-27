@@ -17,8 +17,9 @@ fs.readFile("sql-pretreatment.csv", "utf8", async (err, data) => {
     });
 
     try {
-        //let count = 0;
+        let count = 0; let nArticles = parsedData.data.length;
         for (const row of parsedData.data) {
+            process.stdout.write(`\r working on row: ${count}, progress at ${Math.floor((count++/nArticles)*1000)/10}%`);
             //console.log(`working on row number: ${count++}`)
             if (row["doi link"]) {
                 const article = await check_article(row);
@@ -79,6 +80,8 @@ function add_articleResults(doi, row) {
     return new Promise(async function (res, reject) {
         const articleID = await getIDfromDOI(doi).catch(err => console.log(err));
         const catID = await getIDfromSubCategory(row["substrate category"]).catch(err => console.log(err));
+        const preCatID = await getPretreatmentID(row["pretreatment category"]).catch(err => console.log(err));
+        const preTypeID = await getPretreatmentID(row["pretreatment type"]).catch(err => console.log(err));
         const values = [];
         let isResults = false;
         for (const key in row) {
@@ -93,7 +96,7 @@ function add_articleResults(doi, row) {
         }
         else {
             db.serialize(() => {
-                db.run(`INSERT OR IGNORE INTO article_content ("substrate name","substrate type",TS,VS,TC,TN,"C/N",cellulose,"hemi-cellulose",lignin,"article_id","category_id") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [...values, articleID.id,catID.id],
+                db.run(`INSERT OR IGNORE INTO article_content ("substrate name","substrate type",TS,VS,TC,TN,"C/N",cellulose,"hemi-cellulose",lignin,"article_id","category_id","precat_id","pretype_id","pretreatment detail") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [...values, articleID.id,catID.id,preCatID.id,preTypeID.id,row["pretreatment detail"]],
                     function (err) {
                         if (err) return reject(err);  // Reject if there's an error
                         res(this.lastID || null); // Resolve lastID or null if ignored
@@ -106,7 +109,7 @@ function add_articleResults(doi, row) {
 function add_articlePretreatment(doi, field) {
     return new Promise(async function (resolve, reject) {
         const articleID = await getIDfromDOI(doi).catch(err => console.log(err));
-        const fieldID = await getID(field).catch(err => console.log(err));
+        const fieldID = await getPretreatmentID(field).catch(err => console.log(err));
         db.serialize(() => {
             db.run(`INSERT INTO article_pretreatment (article_id,field_id) VALUES (?,?)`, [articleID.id, fieldID.id],
                 function (err) {
@@ -131,8 +134,8 @@ function insert_field(table, value) {
 
 function linkFields(parent, child) {
     return new Promise(async function (resolve, reject) {
-        const parentID = await getID(parent).catch(err => console.log(err));
-        const childID = await getID(child).catch(err => console.log(err));
+        const parentID = await getPretreatmentID(parent).catch(err => console.log(err));
+        const childID = await getPretreatmentID(child).catch(err => console.log(err));
         db.serialize(() => {
             db.run(`INSERT OR IGNORE INTO field_tree (parent,child) VALUES (?,?)`, [parentID.id, childID.id],
                 function (err) {
@@ -165,7 +168,7 @@ function getIDfromSubCategory(name) {
     })
 }
 
-function getID(field_name) {
+function getPretreatmentID(field_name) {
     return new Promise(function (resolve, reject) {
         db.serialize(() => {
             db.get(`SELECT "id" FROM fields WHERE name = ?`, [field_name], (err, row) => {
