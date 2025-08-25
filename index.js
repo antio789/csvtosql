@@ -99,7 +99,7 @@ function addReactorArticles(file){
                     const cat = await check_duplicate("reactors", "name", row["reactor type"]);
                     if (!cat) {
                         await insert_field("reactors", row["reactor type"]).catch(err => {
-                            throw new Error(`could not add pretreatment CATEGORY with title ${row.Title}`, {cause: err})
+                            throw new Error(`could not add reactor CATEGORY with title ${row.Title}`, {cause: err})
                         });
                     }
                     await linkArticleReactor(row["doi link"], row["reactor type"]);
@@ -107,7 +107,7 @@ function addReactorArticles(file){
                         const type = await check_duplicate("reactors", "name", row["reactor subtype"]);
                         if (!type) {
                             await insert_field("reactors", row["reactor subtype"]).catch(err => {
-                                throw new Error(`could not add pretreatment TYPE with title ${row.Title}`, {cause: err})
+                                throw new Error(`could not add reactor TYPE with title ${row.Title}`, {cause: err})
                             });
                             await linkReactorFields(row["reactor type"], row["reactor subtype"]).catch(err => {
                                 throw new Error(`could not link a pretreatment category with a type ${row.Title}`, {cause: err})
@@ -145,27 +145,14 @@ function add_articleResults(doi, row) {
         const catID = await getIDfromSubCategory(row["substrate category"]).catch(err => console.log(err));
         const preCatID = await getPretreatmentID(row["pretreatment category"]).catch(err => console.log(err));
         const preTypeID = await getPretreatmentID(row["pretreatment type"]).catch(err => console.log(err));
-        const values = [];
-        let isResults = false;
-        for (const key in row) {
-            if (key === "substrate name") isResults = true;
-            if (isResults) {
-                values.push(row[key]);
-            }
-        }
-        if (values.every(value => value === null)) {
-            console.log(`All values are null for row: ${row["Title"]}`);
-            res(null);
-        }
-        else {
-            db.serialize(() => {
-                db.run(`INSERT OR IGNORE INTO article_content ("substrate name","substrate type",TS,VS,TC,TN,"C/N",cellulose,"hemi-cellulose",lignin,"article_id","category_id","precat_id","pretype_id","pretreatment detail") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [...values, articleID.id,catID.id,preCatID.id,preTypeID.id,row["pretreatment detail"]],
-                    function (err) {
-                        if (err) return reject(err);  // Reject if there's an error
-                        res(this.lastID || null); // Resolve lastID or null if ignored
-                    });
-            })
-        }
+
+        db.serialize(() => {
+            db.run(`INSERT OR IGNORE INTO article_content ("substrate name","substrate type",TS,VS,TC,TN,"C/N",cellulose,"hemi-cellulose",lignin,"article_id","category_id","precat_id","pretype_id","pretreatment detail") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [row["substrate"],row["substrate type"],row["TS %"],row["VS %"],row["Tc %"],row["Tn %"],row["C/N"],row["Cellulose %"],row["hemi cellulose %"],row["Lignin %"], articleID.id,catID.id,preCatID.id,preTypeID.id,row["pretreatment detail"]],
+                function (err) {
+                    if (err) return reject(err);  // Reject if there's an error
+                    res(this.lastID || null); // Resolve lastID or null if ignored
+            });
+        })
     })
 }
 
@@ -174,8 +161,11 @@ function add_ReactorArticleData(doi, row) {
         const articleID = await getIDfromDOI(doi).catch(err => console.log(err));
         const catID = await getIDfromSubCategory(row["substrate category"]).catch(err => console.log(err));
         const reactorID = await getReactorID(row["reactor type"]).catch(err => console.log(err));
+
+        //let subreactorID = {id: null};.then(res => ({ id: res?.id ?? res }))
+        const subreactorID = await getReactorID(row["reactor subtype"]).catch(err => {console.log(err);return {id: null};});
         db.serialize(() => {
-            db.run(`INSERT OR IGNORE INTO article_content ("substrate name","substrate type","article_id","category_id","reactorcat_id","reactor detail") VALUES (?,?,?,?,?,?)`, [row["substrate"],row["substrate category"], articleID.id,catID.id,reactorID.id,row["reactor detail"]],
+            db.run(`INSERT OR IGNORE INTO article_content ("substrate name","substrate type","article_id","category_id","reactorcat_id","reactor detail","reactortype_id") VALUES (?,?,?,?,?,?,?)`, [row["substrate"],row["substrate category"], articleID.id,catID.id,reactorID.id,row["reactor detail"],subreactorID.id],
                 function (err) {
                     if (err) return reject(err);  // Reject if there's an error
                     res(this.lastID || null); // Resolve lastID or null if ignored
@@ -354,5 +344,5 @@ fs.readFile("sql-pretreatment.csv", "utf8", (err, data) => {
 });
 */
 
-addPretreatmentArticles("sql-pretreatment.csv");
-//addReactorArticles("reactors final organised.csv");
+//addPretreatmentArticles("pretreatment final organised.csv");
+addReactorArticles("reactors final organised.csv");
